@@ -1,9 +1,7 @@
 const request = require('request');
 
-//
-const fetchMyIP = function(url, callback) {
-  request(url, function(error, response, body) {
-
+const fetchMyIP = function(callback) {
+  request('https://api.ipify.org?format=json', (error, response, body) => {
     if (error) return callback(error, null);
 
     if (response.statusCode !== 200) {
@@ -16,42 +14,65 @@ const fetchMyIP = function(url, callback) {
   });
 };
 
-//
-const fetchCoordsByIP = function(url, callback) {
-  request(url, function(error, response, body) {
-
-    if (error) return callback(error, null);
-
-    if (response.statusCode !== 200) {
-      callback(Error(`Status Code ${response.statusCode} when fetching IP: ${body}`), null);
+const fetchCoordsByIP = function(ip, callback) {
+  request(`https://freegeoip.app/json/${ip}`, (error, response, body) => {
+    if (error) {
+      callback(error, null);
       return;
     }
-    
-    const data = JSON.parse(body);
-    let coordinates = {latitude: data['latitude'], longitude: data['longitude']};
-    callback(null, coordinates);
+
+    if (response.statusCode !== 200) {
+      callback(Error(`Status Code ${response.statusCode} when fetching Coordinates for IP: ${body}`), null);
+      return;
+    }
+
+    const { latitude, longitude } = JSON.parse(body);
+
+    callback(null, { latitude, longitude });
   });
 };
 
-//
-const fetchISSFlyOverTimes = function(url, callback) {
-  request(url, function(error, response, body) {
-  
-    if (error) return callback(error, null);
+const fetchISSFlyOverTimes = function(coords, callback) {
+  const url = `https://iss-pass.herokuapp.com/json/?lat=${coords.latitude}&lon=${coords.longitude}`;
 
-    if (response.statusCode !== 200) {
-      callback(Error(`Status Code ${response.statusCode} when fetching IP: ${body}`), null);
+  request(url, (error, response, body) => {
+    if (error) {
+      callback(error, null);
       return;
     }
-    
-    const data = JSON.parse(body);
-    let flyOverTimes = data['response'];
-    callback(null, flyOverTimes);
+
+    if (response.statusCode !== 200) {
+      callback(Error(`Status Code ${response.statusCode} when fetching ISS pass times: ${body}`), null);
+      return;
+    }
+
+    const passes = JSON.parse(body).response;
+    callback(null, passes);
   });
 };
 
 const nextISSTimesForMyLocation = function(callback) {
-  // empty for now
-}
+  fetchMyIP((error, ip) => {
+    if (error) {
+      return callback(error, null);
+    }
 
-module.exports = { fetchMyIP, fetchCoordsByIP, fetchISSFlyOverTimes, nextISSTimesForMyLocation};
+    fetchCoordsByIP(ip, (error, loc) => {
+      if (error) {
+        return callback(error, null);
+      }
+
+      fetchISSFlyOverTimes(loc, (error, nextPasses) => {
+        if (error) {
+          return callback(error, null);
+        }
+
+        callback(null, nextPasses);
+      });
+    });
+  });
+};
+
+// Only export nextISSTimesForMyLocation and not the other three (API request) functions.
+// This is because they are not needed by external modules.
+module.exports = { nextISSTimesForMyLocation };
